@@ -1,4 +1,4 @@
-name: Build and Test Excalidraw
+name: Build and Package Excalidraw
 
 on:
   push:
@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  build-and-test:
+  build-and-package:
     runs-on: ubuntu-latest
     
     steps:
@@ -28,45 +28,66 @@ jobs:
         run: yarn test:app
         
       - name: Build application
-        run: yarn build
-        
-      - name: Find and list all files after build
         run: |
-          echo "=== البحث عن مجلد build ==="
-          find . -name "build" -type d 2>/dev/null || echo "لم يتم العثور على مجلد build"
-          
-          echo "=== البحث عن ملفات JavaScript ==="
-          find . -name "*.js" -path "*/build/*" 2>/dev/null | head -10 || echo "لم يتم العثور على ملفات JS في build"
-          
-          echo "=== الملفات في المجلد الجذر ==="
+          yarn build
+          echo "✅ البناء اكتمل بنجاح"
+        
+      - name: Verify build directory exists
+        run: |
+          echo "=== التحقق من وجود مجلد build ==="
+          pwd
           ls -la
-          
-          echo "=== البحث عن أي مجلدات تحتوي على sw.js ==="
-          find . -name "sw.js" 2>/dev/null || echo "لم يتم العثور على sw.js"
-          
-      - name: Upload ALL built files
-        if: success()
+          sleep 2
+          echo "=== محتويات مجلد build ==="
+          ls -la build/ || echo "❌ مجلد build غير موجود مباشرة بعد البناء"
+        
+      - name: Wait and retry build directory
+        run: |
+          echo "=== إعادة المحاولة بعد انتظار ==="
+          sleep 5
+          ls -la build/ && echo "✅ مجلد build موجود الآن" || echo "❌ مجلد build لا يزال غير موجود"
+        
+      - name: Upload complete build artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: excalidraw-complete-build
-          path: |
-            .
+          name: excalidraw-production-build
+          path: build/
           retention-days: 30
           compression-level: 9
+          if-no-files-found: error
 
-  analyze-structure:
+      - name: Create deployment package
+        run: |
+          echo "=== إنشاء حزمة نشر ==="
+          mkdir -p dist-package
+          cp -r build/* dist-package/
+          cp package.json dist-package/
+          echo "✅ حزمة النشرهي جاهزة"
+
+      - name: Upload deployment package
+        uses: actions/upload-artifact@v4
+        with:
+          name: excalidraw-deployment-package
+          path: dist-package/
+          retention-days: 30
+
+  final-verification:
     runs-on: ubuntu-latest
-    needs: build-and-test
+    needs: build-and-package
     
     steps:
       - name: Download build artifacts
         uses: actions/download-artifact@v4
         with:
-          name: excalidraw-complete-build
+          name: excalidraw-production-build
+          path: downloaded-build
           
-      - name: Analyze file structure
+      - name: Verify downloaded files
         run: |
-          echo "=== هيكل الملفات بعد البناء ==="
-          find . -type f -name "*.js" | grep -v node_modules | head -20
-          echo "=== المجلدات الرئيسية ==="
-          ls -la
+          echo "=== التحقق من الملفات التي تم تحميلها ==="
+          cd downloaded-build
+          find . -type f -name "*.js" | head -10
+          echo "=== إجمالي الملفات ==="
+          find . -type f | wc -l
+          echo "=== حجم المجلد ==="
+          du -sh .

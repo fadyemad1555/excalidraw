@@ -1,4 +1,4 @@
-name: Build Excalidraw Production
+name: Quick Excalidraw Build
 
 on:
   push:
@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  build-production:
+  quick-build:
     runs-on: ubuntu-latest
     
     steps:
@@ -19,123 +19,18 @@ jobs:
           node-version: '18.x'
           cache: 'yarn'
           
-      - name: Install dependencies
-        run: yarn install --production=false
-        
-      - name: Build application directly
+      - name: Install and build
         run: |
-          # تخطي الاختبارات والبناء المباشر
-          NODE_ENV=production yarn build
-          echo "✅ البناء اكتمل مباشرة بدون اختبارات"
-        
-      - name: Verify build directory
-        run: |
-          echo "=== التحقق من مجلد البناء ==="
-          pwd
-          ls -la
-          echo "=== محتويات مجلد build ==="
-          ls -la build/
-          echo "=== الملفات الرئيسية ==="
-          find build/ -name "*.html" -o -name "*.js" -o -name "*.css" | head -10
-          echo "✅ التحقق الناجح - الملفات موجودة في build/"
-        
-      - name: Upload production build
+          yarn install
+          yarn build
+          # البحث الفوري عن الملفات المبنية
+          find . -name "sw.js" -o -name "workbox-*.js" -o -name "index.html" | grep -v node_modules
+          
+      - name: Upload entire project (excluding node_modules)
         uses: actions/upload-artifact@v4
         with:
-          name: excalidraw-app
-          path: build/
+          name: excalidraw-full-project
+          path: |
+            *
+            !node_modules
           retention-days: 30
-          compression-level: 9
-          if-no-files-found: error
-
-      - name: Create deployment package
-        run: |
-          echo "=== إنشاء حزمة نشر ==="
-          # التأكد من أن المجلد موجود
-          ls -la build/ > file-list.txt
-          echo "✅ تم إنشاء قائمة الملفات"
-        
-      - name: Upload file list
-        uses: actions/upload-artifact@v4
-        with:
-          name: build-file-list
-          path: file-list.txt
-          retention-days: 30
-
-  verify-and-package:
-    runs-on: ubuntu-latest
-    needs: build-production
-    
-    steps:
-      - name: Download build artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: excalidraw-app
-          path: downloaded-build
-          
-      - name: Verify downloaded files
-        run: |
-          echo "=== التحقق من الملفات المحملة ==="
-          cd downloaded-build
-          ls -la
-          echo "=== الملفات الرئيسية ==="
-          find . -name "index.html" -o -name "*.js" | head -15
-          echo "=== إجمالي الملفات ==="
-          find . -type f | wc -l
-          echo "=== حجم المجلد ==="
-          du -sh .
-          
-      - name: Create ready-to-use package
-        run: |
-          cd downloaded-build
-          # إنشاء ملف تشغيل
-          cat > start-server.sh << 'EOF'
-          #!/bin/bash
-          echo "تشغيل خادم Excalidraw المحلي..."
-          echo "افتح http://localhost:8000 في متصفحك"
-          python3 -m http.server 8000
-          EOF
-          chmod +x start-server.sh
-          
-          # إنشاء ملف التعليمات
-          cat > README-ARABIC.md << 'EOF'
-          # تطبيق Excalidraw
-          
-          ## طرق التشغيل:
-          
-          1. **تشغيل سريع**: 
-             - افتح ملف `index.html` مباشرة في المتصفح
-          
-          2. **تشغيل بخادم محلي**:
-             - تشغيل السكريبت: `./start-server.sh`
-             - أو يدوياً: `python3 -m http.server 8000`
-             - ثم افتح: http://localhost:8000
-          
-          3. **استخدام Node.js**:
-             - `npx serve -s . -p 3000`
-          
-          ✅ التطبيق جاهز للاستخدام!
-          EOF
-
-      - name: Upload final package
-        uses: actions/upload-artifact@v4
-        with:
-          name: excalidraw-final-package
-          path: downloaded-build/
-          retention-days: 30
-
-  success-notification:
-    runs-on: ubuntu-latest
-    needs: [build-production, verify-and-package]
-    if: always()
-    
-    steps:
-      - name: Build status
-        run: |
-          if ${{ needs.build-production.result == 'success' && needs.verify-and-package.result == 'success' }}; then
-            echo "🎉 البناء اكتمل بنجاح!"
-            echo "📦 يمكنك تحميل الملفات من قسم Artifacts"
-          else
-            echo "❌ حدث خطأ في البناء"
-            exit 1
-          fi

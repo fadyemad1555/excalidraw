@@ -23,14 +23,91 @@ jobs:
         run: |
           yarn install
           yarn build
-          # البحث الفوري عن الملفات المبنية
+          echo "✅ البناء اكتمل"
+          
+      - name: Find and verify build files
+        run: |
+          echo "=== البحث عن ملفات البناء ==="
           find . -name "sw.js" -o -name "workbox-*.js" -o -name "index.html" | grep -v node_modules
           
-      - name: Upload entire project (excluding node_modules)
+          echo "=== البحث عن مجلد build في كامل المشروع ==="
+          find . -type d -name "build" | grep -v node_modules
+          
+          echo "=== فحص هيكل المشروع ==="
+          ls -la
+          echo "=== فحص مجلد packages ==="
+          ls -la packages/ 2>/dev/null && echo "✅ مجلد packages موجود" || echo "❌ مجلد packages غير موجود"
+          
+      - name: Locate exact build directory
+        run: |
+          echo "=== تحديد موقع البناء الدقيق ==="
+          # البحث في المواقع المحتملة
+          for potential_dir in "packages/excalidraw/build" "excalidraw-app/build" "build" "dist" "packages/build"; do
+            if [ -d "$potential_dir" ]; then
+              echo "✅ تم العثور على الملفات في: $potential_dir"
+              ls -la "$potential_dir" | head -10
+              echo "$potential_dir" > build_location.txt
+              break
+            fi
+          done
+          
+          # إذا لم نجد المجلد، نبحث عن أي مجلد build
+          if [ ! -f build_location.txt ]; then
+            found_dir=$(find . -type d -name "build" -not -path "*/node_modules/*" | head -1)
+            if [ -n "$found_dir" ]; then
+              echo "✅ تم العثور على مجلد build في: $found_dir"
+              echo "$found_dir" > build_location.txt
+            else
+              echo "❌ لم يتم العثور على مجلد build في أي مكان"
+              exit 1
+            fi
+          fi
+
+      - name: Upload build files
+        run: |
+          BUILD_DIR=$(cat build_location.txt)
+          echo "📦 رفع الملفات من: $BUILD_DIR"
+          
+          # إنشاء حزمة جاهزة للاستخدام
+          mkdir -p excalidraw-ready
+          cp -r "$BUILD_DIR"/* excalidraw-ready/
+          
+          # إضافة ملف تشغيل
+          cat > excalidraw-ready/start.html << 'EOF'
+          <!DOCTYPE html>
+          <html>
+          <head>
+              <title>Excalidraw - افتح التطبيق</title>
+          </head>
+          <body>
+              <h1>Excalidraw جاهز للتشغيل</h1>
+              <p><a href="index.html">انقر هنا لفتح التطبيق</a></p>
+          </body>
+          </html>
+          EOF
+          
+          echo "✅ تم تجهيز الحزمة النهائية"
+
+      - name: Upload ready-to-use package
         uses: actions/upload-artifact@v4
         with:
-          name: excalidraw-full-project
+          name: excalidraw-ready-package
+          path: excalidraw-ready/
+          retention-days: 30
+
+      - name: Upload build location info
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-info
+          path: |
+            build_location.txt
+          retention-days: 30
+
+      - name: Upload entire project as backup
+        uses: actions/upload-artifact@v4
+        with:
+          name: excalidraw-full-backup
           path: |
             *
             !node_modules
-          retention-days: 30
+          retention-days: 15
